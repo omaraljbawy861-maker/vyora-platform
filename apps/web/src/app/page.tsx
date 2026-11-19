@@ -6,6 +6,7 @@ import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 type Post = { id: string; author_id: string; body: string; language: string; created_at: string };
 type Profile = { id: string; display_name: string | null; username: string | null };
+type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string };
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
@@ -18,6 +19,10 @@ export default function Home() {
   const [postBody, setPostBody] = useState("");
   const [posts, setPosts] = useState<Post[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [likedPosts, setLikedPosts] = useState<string[]>([]);
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -34,10 +39,26 @@ export default function Home() {
     if (error) { setMessage(error.message); setBusy(false); return; }
     const rows = (data ?? []) as Post[];
     setPosts(rows);
-    const ids = [...new Set(rows.map((p) => p.author_id))];
+    const postIds = rows.map((p) => p.id);
+    if (postIds.length) {
+      const [{ data: reactionRows }, { data: commentRows }] = await Promise.all([
+        supabase.from("reactions").select("post_id,user_id").in("post_id", postIds).eq("reaction", "like"),
+        supabase.from("comments").select("id,post_id,author_id,body,created_at").in("post_id", postIds).order("created_at", { ascending: true }),
+      ]);
+      const reactions = reactionRows ?? [];
+      setLikeCounts(reactions.reduce((acc: Record<string, number>, row: { post_id: string }) => { acc[row.post_id] = (acc[row.post_id] ?? 0) + 1; return acc; }, {}));
+      setLikedPosts(reactions.filter((row: { user_id: string }) => row.user_id === session.user.id).map((row: { post_id: string }) => row.post_id));
+      setComments((commentRows ?? []).reduce((acc: Record<string, Comment[]>, row: Comment) => { (acc[row.post_id] ??= []).push(row); return acc; }, {}));
+    } else { setLikeCounts({}); setLikedPosts([]); setComments({}); }
+    const ids = [...new Set([...rows.map((p) => p.author_id), ...(([] as Comment[]))])];
     if (ids.length) {
       const { data: people } = await supabase.from("profiles").select("id,display_name,username").in("id", ids);
       setProfiles(Object.fromEntries(((people ?? []) as Profile[]).map((p) => [p.id, p])));
+      const commentAuthorIds = [...new Set(((Object.values(comments).flat()) as Comment[]).map((item) => item.author_id))];
+      if (commentAuthorIds.length) {
+        const { data: commentPeople } = await supabase.from("profiles").select("id,display_name,username").in("id", commentAuthorIds);
+        setProfiles((current) => ({ ...current, ...Object.fromEntries(((commentPeople ?? []) as Profile[]).map((p) => [p.id, p])) }));
+      }
     } else setProfiles({});
     setBusy(false);
   }, [session]);
@@ -96,6 +117,28 @@ export default function Home() {
     void loadFeed();
   }
 
+  async function toggleLike(postId: string) {
+    if (!supabase || !session?.user) return;
+    const alreadyLiked = likedPosts.includes(postId);
+    setLikedPosts((current) => alreadyLiked ? current.filter((id) => id !== postId) : [...current, postId]);
+    setLikeCounts((current) => ({ ...current, [postId]: Math.max(0, (current[postId] ?? 0) + (alreadyLiked ? -1 : 1)) }));
+    const result = alreadyLiked
+      ? await supabase.from("reactions").delete().eq("post_id", postId).eq("user_id", session.user.id)
+      : await supabase.from("reactions").insert({ post_id: postId, user_id: session.user.id, reaction: "like" });
+    if (result.error) { setMessage(`Could not update like: ${result.error.message}`); void loadFeed(); }
+  }
+
+  async function submitComment(postId: string) {
+    if (!supabase || !session?.user) return;
+    const body = (commentDrafts[postId] ?? "").trim();
+    if (!body) return;
+    const { data, error } = await supabase.from("comments").insert({ post_id: postId, author_id: session.user.id, body }).select("id,post_id,author_id,body,created_at").single();
+    if (error) { setMessage(`Could not add comment: ${error.message}`); return; }
+    setComments((current) => ({ ...current, [postId]: [...(current[postId] ?? []), data as Comment] }));
+    setProfiles((current) => ({ ...current, [session.user.id]: current[session.user.id] ?? { id: session.user.id, display_name: session.user.user_metadata?.display_name ?? session.user.email?.split("@")[0] ?? "VYORA member", username: null } }));
+    setCommentDrafts((current) => ({ ...current, [postId]: "" }));
+  }
+
   async function signOut() {
     if (!supabase) return;
     const { error } = await supabase.auth.signOut();
@@ -118,7 +161,7 @@ export default function Home() {
           {message && <p className="notice" role="status">{message}</p>}
           <form className="composer" onSubmit={publishPost}><label htmlFor="post-body">Share something with the world</label><textarea id="post-body" value={postBody} onChange={(e) => setPostBody(e.target.value)} maxLength={2000} placeholder="What would you like to share?" required /><div className="composer-footer"><span>{postBody.length}/2000</span><button className="button-primary" disabled={busy || !postBody.trim()}>{busy ? "Please wait…" : "Publish post ↗"}</button></div></form>
           <div className="feed-heading"><div><div className="eyebrow">DISCOVER</div><h2>Community feed</h2></div><button className="refresh-button" onClick={() => void loadFeed()} disabled={busy}>↻ Refresh</button></div>
-          {posts.length === 0 ? <div className="empty-state"><span>✳</span><h3>Your global conversation starts here.</h3><p>{busy ? "Loading community posts…" : "Be the first to publish a post."}</p></div> : <div className="feed-list">{posts.map((post) => { const person = profiles[post.author_id]; return <article className="feed-card" key={post.id}><div className="feed-author"><span className="feed-avatar">{(person?.display_name || person?.username || "V").slice(0,1).toUpperCase()}</span><div><b>{person?.display_name || person?.username || "VYORA member"}</b><small>{new Date(post.created_at).toLocaleString()}</small></div></div><p>{post.body}</p><div className="feed-meta">{post.language.toUpperCase()} <span>·</span> PUBLIC POST</div></article>; })}</div>}
+          {posts.length === 0 ? <div className="empty-state"><span>✳</span><h3>Your global conversation starts here.</h3><p>{busy ? "Loading community posts…" : "Be the first to publish a post."}</p></div> : <div className="feed-list">{posts.map((post) => { const person = profiles[post.author_id]; return <article className="feed-card" key={post.id}><div className="feed-author"><span className="feed-avatar">{(person?.display_name || person?.username || "V").slice(0,1).toUpperCase()}</span><div><b>{person?.display_name || person?.username || "VYORA member"}</b><small>{new Date(post.created_at).toLocaleString()}</small></div></div><p>{post.body}</p><div className="feed-meta">{post.language.toUpperCase()} <span>·</span> PUBLIC POST</div><div className="post-actions"><button type="button" className={likedPosts.includes(post.id) ? "like-button liked" : "like-button"} onClick={() => void toggleLike(post.id)}>♥ {likedPosts.includes(post.id) ? "Liked" : "Like"} · {likeCounts[post.id] ?? 0}</button></div><div className="comment-area">{(comments[post.id] ?? []).map((comment) => { const author = profiles[comment.author_id]; return <div className="comment-item" key={comment.id}><b>{author?.display_name || author?.username || "VYORA member"}</b><span>{comment.body}</span></div>; })}<form className="comment-form" onSubmit={(event) => { event.preventDefault(); void submitComment(post.id); }}><input aria-label="Write a comment" value={commentDrafts[post.id] ?? ""} onChange={(event) => setCommentDrafts((current) => ({ ...current, [post.id]: event.target.value }))} maxLength={1000} placeholder="Write a comment…" /><button type="submit" disabled={!(commentDrafts[post.id] ?? "").trim()}>Comment ↗</button></form></div></article>; })}</div>}
         </section>
       ) : (
         <>
