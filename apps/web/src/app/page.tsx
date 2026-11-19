@@ -120,25 +120,49 @@ export default function Home() {
   }
 
   async function toggleLike(postId: string) {
-    if (!supabase || !session?.user) return;
+    if (!supabase || !session?.user) {
+      setMessage("Please sign in again to like a post.");
+      return;
+    }
     const alreadyLiked = likedPosts.includes(postId);
-    setLikedPosts((current) => alreadyLiked ? current.filter((id) => id !== postId) : [...current, postId]);
-    setLikeCounts((current) => ({ ...current, [postId]: Math.max(0, (current[postId] ?? 0) + (alreadyLiked ? -1 : 1)) }));
-    const result = alreadyLiked
-      ? await supabase.from("reactions").delete().eq("post_id", postId).eq("user_id", session.user.id)
-      : await supabase.from("reactions").insert({ post_id: postId, user_id: session.user.id, reaction: "like" });
-    if (result.error) { setMessage(`Could not update like: ${result.error.message}`); void loadFeed(); }
+    setMessage(alreadyLiked ? "Removing your like…" : "Adding your like…");
+    try {
+      const result = alreadyLiked
+        ? await supabase.from("reactions").delete().eq("post_id", postId).eq("user_id", session.user.id)
+        : await supabase.from("reactions").insert({ post_id: postId, user_id: session.user.id, reaction: "like" });
+      if (result.error) throw result.error;
+      setLikedPosts((current) => alreadyLiked ? current.filter((id) => id !== postId) : [...current, postId]);
+      setLikeCounts((current) => ({ ...current, [postId]: Math.max(0, (current[postId] ?? 0) + (alreadyLiked ? -1 : 1)) }));
+      setMessage(alreadyLiked ? "Like removed." : "You liked this post.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setMessage(`Could not update like: ${detail}`);
+      await loadFeed();
+    }
   }
 
   async function submitComment(postId: string) {
-    if (!supabase || !session?.user) return;
+    if (!supabase || !session?.user) {
+      setMessage("Please sign in again to comment.");
+      return;
+    }
     const body = (commentDrafts[postId] ?? "").trim();
-    if (!body) return;
-    const { data, error } = await supabase.from("comments").insert({ post_id: postId, author_id: session.user.id, body }).select("id,post_id,author_id,body,created_at").single();
-    if (error) { setMessage(`Could not add comment: ${error.message}`); return; }
-    setComments((current) => ({ ...current, [postId]: [...(current[postId] ?? []), data as Comment] }));
-    setProfiles((current) => ({ ...current, [session.user.id]: current[session.user.id] ?? { id: session.user.id, display_name: session.user.user_metadata?.display_name ?? session.user.email?.split("@")[0] ?? "VYORA member", username: null } }));
-    setCommentDrafts((current) => ({ ...current, [postId]: "" }));
+    if (!body) {
+      setMessage("Write a comment first.");
+      return;
+    }
+    setMessage("Publishing your comment…");
+    try {
+      const { data, error } = await supabase.from("comments").insert({ post_id: postId, author_id: session.user.id, body }).select("id,post_id,author_id,body,created_at").single();
+      if (error) throw error;
+      setComments((current) => ({ ...current, [postId]: [...(current[postId] ?? []), data as Comment] }));
+      setProfiles((current) => ({ ...current, [session.user.id]: current[session.user.id] ?? { id: session.user.id, display_name: session.user.user_metadata?.display_name ?? session.user.email?.split("@")[0] ?? "VYORA member", username: null } }));
+      setCommentDrafts((current) => ({ ...current, [postId]: "" }));
+      setMessage("Your comment has been published.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setMessage(`Could not add comment: ${detail}`);
+    }
   }
 
   async function signOut() {
