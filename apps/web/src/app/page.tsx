@@ -59,31 +59,41 @@ export default function Home() {
 
   async function publishPost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !session?.user || !postBody.trim()) return;
-    setBusy(true); setMessage("");
-    const { data: createdPost, error } = await supabase.from("posts").insert({ author_id: session.user.id, body: postBody.trim(), language: navigator.language?.split("-")[0] || "en", visibility: "public" }).select("id,author_id,body,language,created_at").single();
+    if (!supabase || !session?.user || !postBody.trim() || busy) return;
+    const body = postBody.trim();
+    setBusy(true);
+    setMessage("");
+    const { error } = await supabase.from("posts").insert({
+      author_id: session.user.id,
+      body,
+      language: navigator.language?.split("-")[0] || "en",
+      visibility: "public",
+    });
     if (error) {
-      setMessage(error.message);
-    } else {
-      setPostBody("");
-      if (createdPost) {
-        setPosts((current) => [createdPost as Post, ...current.filter((post) => post.id !== createdPost.id)]);
-        setProfiles((current) => ({
-          ...current,
-          [session.user.id]: current[session.user.id] ?? {
-            id: session.user.id,
-            display_name: session.user.user_metadata?.display_name ?? session.user.email?.split("@")[0] ?? "VYORA member",
-            username: null,
-          },
-        }));
-      }
-      setMessage("Your post has been published.");
-      await loadFeed();
-      if (createdPost) {
-        setPosts((current) => current.some((post) => post.id === createdPost.id) ? current : [createdPost as Post, ...current]);
-      }
+      setMessage(`Could not publish: ${error.message}`);
+      setBusy(false);
+      return;
     }
+    const optimisticPost: Post = {
+      id: crypto.randomUUID(),
+      author_id: session.user.id,
+      body,
+      language: navigator.language?.split("-")[0] || "en",
+      created_at: new Date().toISOString(),
+    };
+    setPosts((current) => [optimisticPost, ...current]);
+    setProfiles((current) => ({
+      ...current,
+      [session.user.id]: current[session.user.id] ?? {
+        id: session.user.id,
+        display_name: session.user.user_metadata?.display_name ?? session.user.email?.split("@")[0] ?? "VYORA member",
+        username: null,
+      },
+    }));
+    setPostBody("");
+    setMessage("Your post has been published.");
     setBusy(false);
+    void loadFeed();
   }
 
   async function signOut() {
