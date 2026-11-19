@@ -40,21 +40,23 @@ export default function Home() {
     const rows = (data ?? []) as Post[];
     setPosts(rows);
     const postIds = rows.map((p) => p.id);
+    let commentRows: Comment[] = [];
     if (postIds.length) {
-      const [{ data: reactionRows }, { data: commentRows }] = await Promise.all([
+      const [{ data: reactionRows }, { data: fetchedComments }] = await Promise.all([
         supabase.from("reactions").select("post_id,user_id").in("post_id", postIds).eq("reaction", "like"),
         supabase.from("comments").select("id,post_id,author_id,body,created_at").in("post_id", postIds).order("created_at", { ascending: true }),
       ]);
       const reactions = reactionRows ?? [];
       setLikeCounts(reactions.reduce((acc: Record<string, number>, row: { post_id: string }) => { acc[row.post_id] = (acc[row.post_id] ?? 0) + 1; return acc; }, {}));
       setLikedPosts(reactions.filter((row: { user_id: string }) => row.user_id === session.user.id).map((row: { post_id: string }) => row.post_id));
-      setComments((commentRows ?? []).reduce((acc: Record<string, Comment[]>, row: Comment) => { (acc[row.post_id] ??= []).push(row); return acc; }, {}));
+      commentRows = (fetchedComments ?? []) as Comment[];
+      setComments(commentRows.reduce((acc: Record<string, Comment[]>, row: Comment) => { (acc[row.post_id] ??= []).push(row); return acc; }, {}));
     } else { setLikeCounts({}); setLikedPosts([]); setComments({}); }
     const ids = [...new Set(rows.map((p) => p.author_id))];
     if (ids.length) {
       const { data: people } = await supabase.from("profiles").select("id,display_name,username").in("id", ids);
       setProfiles(Object.fromEntries(((people ?? []) as Profile[]).map((p) => [p.id, p])));
-      const commentAuthorIds = [...new Set(((commentRows ?? []) as Comment[]).map((item) => item.author_id))];
+      const commentAuthorIds = [...new Set(commentRows.map((item) => item.author_id))];
       if (commentAuthorIds.length) {
         const { data: commentPeople } = await supabase.from("profiles").select("id,display_name,username").in("id", commentAuthorIds);
         setProfiles((current) => ({ ...current, ...Object.fromEntries(((commentPeople ?? []) as Profile[]).map((p) => [p.id, p])) }));
