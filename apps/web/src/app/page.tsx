@@ -50,11 +50,11 @@ export default function Home() {
       setLikedPosts(reactions.filter((row: { user_id: string }) => row.user_id === session.user.id).map((row: { post_id: string }) => row.post_id));
       setComments((commentRows ?? []).reduce((acc: Record<string, Comment[]>, row: Comment) => { (acc[row.post_id] ??= []).push(row); return acc; }, {}));
     } else { setLikeCounts({}); setLikedPosts([]); setComments({}); }
-    const ids = [...new Set([...rows.map((p) => p.author_id), ...(([] as Comment[]))])];
+    const ids = [...new Set(rows.map((p) => p.author_id))];
     if (ids.length) {
       const { data: people } = await supabase.from("profiles").select("id,display_name,username").in("id", ids);
       setProfiles(Object.fromEntries(((people ?? []) as Profile[]).map((p) => [p.id, p])));
-      const commentAuthorIds = [...new Set(((Object.values(comments).flat()) as Comment[]).map((item) => item.author_id))];
+      const commentAuthorIds = [...new Set(((commentRows ?? []) as Comment[]).map((item) => item.author_id))];
       if (commentAuthorIds.length) {
         const { data: commentPeople } = await supabase.from("profiles").select("id,display_name,username").in("id", commentAuthorIds);
         setProfiles((current) => ({ ...current, ...Object.fromEntries(((commentPeople ?? []) as Profile[]).map((p) => [p.id, p])) }));
