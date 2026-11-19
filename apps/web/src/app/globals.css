@@ -96,3 +96,16 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .empty-state{text-align:center;padding:42px 20px;color:#9ea6c4}.empty-state>span{font-size:28px;color:#b59aff}.empty-state h3{font:700 20px Manrope;color:#f1f2ff;margin:12px 0}.empty-state p{font-size:12px;margin:0}
 @media(max-width:800px){.auth-layout{grid-template-columns:1fr;gap:28px}.app-heading{align-items:flex-start}.app-badge{width:70px;height:70px;border-radius:20px;flex:0 0 70px}.app-badge span{font-size:30px}}
 @media(max-width:520px){.auth-section{padding:70px 0}.auth-card{padding:18px}.app-shell{padding-top:55px}.app-heading{display:block}.app-badge{display:none}.composer{padding:15px}.feed-card{padding:16px}}
+
+/* Likes and comments */
+.post-actions{display:flex;align-items:center;margin-top:15px;padding-top:12px;border-top:1px solid var(--line)}
+.like-button{border:1px solid #8d83d744;border-radius:20px;padding:8px 13px;background:#171b35;color:#c9c8ff;font:600 11px 'DM Sans',sans-serif;cursor:pointer;transition:all .2s}
+.like-button:hover,.like-button.liked{background:#39234b;border-color:#bd83ef;color:#f2c4ff}
+.comment-area{display:grid;gap:10px;margin-top:15px}
+.comment-item{display:flex;gap:9px;align-items:baseline;padding:9px 12px;border-radius:9px;background:#0b1021;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.comment-item b{color:#c3b5ff;white-space:nowrap}.comment-item span{color:#dfe2f7}
+.comment-form{display:flex;gap:8px}
+.comment-form input{min-width:0;flex:1;border:1px solid #7f89ba44;border-radius:9px;background:#090d1d;color:#fff;padding:11px 12px;font:12px 'DM Sans',sans-serif;outline:none}
+.comment-form input:focus{border-color:#9290ff}
+.comment-form button{border:1px solid #8e89d866;border-radius:9px;padding:0 13px;background:#25264b;color:#e8e5ff;font:600 11px 'DM Sans',sans-serif;cursor:pointer}
+.comment-form button:disabled{opacity:.45;cursor:not-allowed}
